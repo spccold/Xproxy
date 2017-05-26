@@ -1,0 +1,38 @@
+apply plugin: 'java'
+apply plugin: 'application'
+
+sourceCompatibility = 1.8
+targetCompatibility = 1.8
+    
+mainClassName = "xproxy.Xproxy"
+
+applicationDefaultJvmArgs = ["-Xmn1280m",
+                              "-Xms3g",
+                              "-Xmx3g", 
+                              "-XX:MetaspaceSize=256m", 
+                              "-XX:MaxMetaspaceSize=256m", 
+                              "-XX:+UseConcMarkSweepGC", 
+                              "-XX:+UseCMSInitiatingOccupancyOnly",  
+                              "-XX:CMSInitiatingOccupancyFraction=80", 
+                              "-Xloggc:Xproxy.log", 
+                              "-XX:+PrintGCDetails", 
+                              "-XX:+PrintGCDateStamps", 
+                              "-XX:+PrintTenuringDistribution",
+                              "-XX:+HeapDumpOnOutOfMemoryError", 
+                              "-XX:HeapDumpPath=Xproxy.hprof",
+                              "-XX:+DisableExplicitGC",
+                              "-XX:+UseBiasedLocking"]
+                              
+repositories{
+    mavenLocal();
+    mavenCentral()
+}
+
+dependencies {
+    compile 'org.slf4j:slf4j-api:1.7.6'
+    compile 'ch.qos.logback:logback-core:1.1.2'
+    compile 'ch.qos.logback:logback-classic:1.1.2'
+    compile 'io.netty:netty-all:4.1.6.Final'
+    testCompile 'junit:junit:4.11'
+}
+
