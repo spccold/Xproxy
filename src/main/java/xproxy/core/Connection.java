@@ -5,9 +5,9 @@ import xproxy.conf.XproxyConfig.Server;
 
 public class Connection {
 
-	private Server server;
+	private final Server server;
 	
-	private Channel channel;
+	private final Channel channel;
 
 	public Connection(Server server, Channel channel) {
 		this.server = server;

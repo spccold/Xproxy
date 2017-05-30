@@ -17,8 +17,7 @@ public class RequestContext {
 		}
 	};
 
-	private RequestContext() {
-	}
+	private RequestContext() {}
 
 	public LinkedList<Connection> getKeepAlivedConns(String proxypass) {
 		LinkedList<Connection> conns = keepAlivedConns.get(proxypass);
