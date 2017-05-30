@@ -1,0 +1,39 @@
+# accept connections on the specified port
+listen: 8000
+
+# keepalive timeout for all downstream connetions, second
+keepalive_timeout: 65
+
+# netty worker threads(auto = cpu cores)
+worker_threads: auto
+
+# max connections per worker
+worker_connections: 102400
+
+# all virtual hosts configurations
+servers: 
+  localhost: 
+    -
+      path: /api/books/available
+      proxy_pass: http://localhost_pool1
+    -
+      path: /api/books/checked-out
+      proxy_pass: http://localhost_pool2
+  www.mydomain.com: 
+    -
+      path: /api/books/available
+      proxy_pass: http://localhost_pool1
+    -
+      path: /api/books/checked-out
+      proxy_pass: http://localhost_pool2
+  
+# all upstream configurations
+upstreams: 
+  localhost_pool1: 
+    keepalive: 16 # for all backends in current pool
+    servers: 
+     - 127.0.0.1:8088
+  localhost_pool2: 
+    keepalive: 8
+    servers: 
+     - 127.0.0.1:8088
