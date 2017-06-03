@@ -1,5 +1,6 @@
 package xproxy.upstream;
 
+import java.util.Iterator;
 import java.util.LinkedList;
 
 import org.slf4j.Logger;
@@ -45,7 +46,9 @@ public class UpStreamHandler extends SimpleChannelInboundHandler<FullHttpRespons
 			logger.info(String.format(
 					"[%s]cached connctions exceed the keepalive[%d], the least recently used connection are closed",
 					proxyPass, server.getKeepalive()));
-			conns.pollFirst().getChannel().close();
+			Channel tmp = conns.pollFirst().getChannel();
+			tmp.attr(AttributeKeys.UPSTREAM_ACTIVE_CLOSE_KEY).set(true);
+			tmp.close();
 		}
 		conns.addLast(new Connection(server, upstream));
 		if (keepAlived) {
@@ -58,7 +61,13 @@ public class UpStreamHandler extends SimpleChannelInboundHandler<FullHttpRespons
 
 	@Override
 	public void channelInactive(ChannelHandlerContext ctx) throws Exception {
-		logger.warn(String.format("downstream channel[%s] inactive", ctx.channel()));
+		boolean activeClose = false;
+		if(ctx.channel().hasAttr(AttributeKeys.UPSTREAM_ACTIVE_CLOSE_KEY)
+				&& ctx.channel().attr(AttributeKeys.UPSTREAM_ACTIVE_CLOSE_KEY).get()){
+			activeClose = true;
+		}
+		
+		logger.warn(String.format("upstream channel[%s] inactive, activeClose:%s", ctx.channel(), activeClose));
 
 		Channel downstream = null;
 		Boolean keepAlived = null;
@@ -68,6 +77,18 @@ public class UpStreamHandler extends SimpleChannelInboundHandler<FullHttpRespons
 				downstream.writeAndFlush(RequestContext.errorResponse(), downstream.voidPromise());
 			} else {
 				downstream.writeAndFlush(RequestContext.errorResponse()).addListener(ChannelFutureListener.CLOSE);
+			}
+		}else{// remove current inactive channel from cached conns
+			LinkedList<Connection> conns = RequestContext.keepAlivedConntions(proxyPass);
+			Connection tmp = null;
+			
+			for (Iterator<Connection> it = conns.iterator(); it.hasNext();) {
+				tmp = it.next();
+				// find the inactive connection
+				if (server == tmp.getServer()) {
+					it.remove();
+					break;
+				}
 			}
 		}
 		super.channelInactive(ctx);

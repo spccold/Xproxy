@@ -35,6 +35,8 @@ public class DownStreamHandler extends SimpleChannelInboundHandler<FullHttpReque
 
 	private static final Logger logger = LoggerFactory.getLogger(DownStreamHandler.class);
 
+	private static final int MAX_ATTEMPTS = 3;
+
 	private final XproxyConfig config;
 
 	private final RoundRobinFactory robinFactory;
@@ -72,18 +74,24 @@ public class DownStreamHandler extends SimpleChannelInboundHandler<FullHttpReque
 
 		// increase refCount
 		request.retain();
+		// proxy request
+		proxy(server, proxyPass, downstream, request, keepAlived, MAX_ATTEMPTS);
+	}
 
+	public void proxy(Server server, String proxyPass, Channel downstream, FullHttpRequest request, boolean keepAlived,
+			int maxAttempts) {
 		// get connection from cache
 		Connection connection = getConn(server, proxyPass);
 		if (null == connection) {// need create an new connection
-			createConnAndSendRequest(downstream, server, proxyPass, request, keepAlived);
+			createConnAndSendRequest(downstream, server, proxyPass, request, keepAlived, maxAttempts);
 		} else {// use the cached connection
-			setContextAndRequest(request, connection.getChannel(), downstream, keepAlived);
+			setContextAndRequest(server, proxyPass, request, connection.getChannel(), downstream, keepAlived, false,
+					maxAttempts);
 		}
 	}
 
 	public void createConnAndSendRequest(Channel downstream, Server server, String proxyPass, FullHttpRequest request,
-			boolean keepAlived) {
+			boolean keepAlived, int maxAttempts) {
 		Bootstrap b = new Bootstrap();
 		b.group(downstream.eventLoop());
 		b.channel(downstream.getClass());
@@ -110,10 +118,15 @@ public class DownStreamHandler extends SimpleChannelInboundHandler<FullHttpReque
 			@Override
 			public void operationComplete(ChannelFuture future) throws Exception {
 				if (future.isSuccess()) {
-					setContextAndRequest(request, future.channel(), downstream, keepAlived);
+					setContextAndRequest(server, proxyPass, request, future.channel(), downstream, keepAlived, true,
+							maxAttempts);
 				} else {
-					request.release();
-					downstream.writeAndFlush(RequestContext.errorResponse(), downstream.voidPromise());
+					if (maxAttempts > 0) {
+						proxy(server, proxyPass, downstream, request, keepAlived, maxAttempts - 1);
+					} else {
+						request.release();
+						downstream.writeAndFlush(RequestContext.errorResponse(), downstream.voidPromise());
+					}
 				}
 			}
 		});
@@ -144,19 +157,26 @@ public class DownStreamHandler extends SimpleChannelInboundHandler<FullHttpReque
 		}
 	}
 
-	public void setContextAndRequest(FullHttpRequest request, Channel upstream, Channel downstream,
-			boolean keepalived) {
+	public void setContextAndRequest(Server server, String proxyPass, FullHttpRequest request, Channel upstream,
+			Channel downstream, boolean keepAlived, final boolean newConn, final int maxAttempts) {
 		// set request context
 		upstream.attr(AttributeKeys.DOWNSTREAM_CHANNEL_KEY).set(downstream);
-		upstream.attr(AttributeKeys.KEEP_ALIVED_KEY).set(keepalived);
+		upstream.attr(AttributeKeys.KEEP_ALIVED_KEY).set(keepAlived);
 
+		request.retain();
 		upstream.writeAndFlush(request).addListener(new ChannelFutureListener() {
 			@Override
 			public void operationComplete(ChannelFuture future) throws Exception {
 				if (!future.isSuccess()) {
-					downstream.writeAndFlush(RequestContext.errorResponse(), downstream.voidPromise());
-					logger.error(String.format("upstream channel[%s] write to backed fail", future.channel()),
-							future.cause());
+					if (maxAttempts > 0) {
+						proxy(server, proxyPass, downstream, request, keepAlived, maxAttempts - 1);
+					} else {
+						downstream.writeAndFlush(RequestContext.errorResponse(), downstream.voidPromise());
+						logger.error(String.format("%s upstream channel[%s] write to backed fail",
+								newConn ? "new" : "cached", future.channel()), future.cause());
+					}
+				} else {
+					request.release();
 				}
 			}
 		});
