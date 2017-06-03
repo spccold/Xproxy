@@ -251,8 +251,4 @@ public class PlatformUtil {
     public static boolean isAndroid() {
         return ANDROID;
     }
-    public static void main(String[] args) {
-        System.out.println(isMac());
-        System.out.println(isLinux());
-    }
 }

@@ -14,26 +14,12 @@ worker_connections: 102400
 servers: 
   localhost: 
     -
-      path: /api/books/available
-      proxy_pass: http://localhost_pool1
-    -
-      path: /api/books/checked-out
-      proxy_pass: http://localhost_pool2
-  www.mydomain.com: 
-    -
-      path: /api/books/available
-      proxy_pass: http://localhost_pool1
-    -
-      path: /api/books/checked-out
-      proxy_pass: http://localhost_pool2
+      path: /*
+      proxy_pass: http://localhost_pool
   
 # all upstream configurations
 upstreams: 
-  localhost_pool1: 
+  localhost_pool: 
     keepalive: 16 # for all backends in current pool
-    servers: 
-     - 127.0.0.1:8088
-  localhost_pool2: 
-    keepalive: 8
     servers: 
      - 127.0.0.1:8088

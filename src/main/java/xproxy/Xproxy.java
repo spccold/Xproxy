@@ -6,8 +6,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import io.netty.bootstrap.ServerBootstrap;
+import io.netty.buffer.PooledByteBufAllocator;
 import io.netty.channel.Channel;
+import io.netty.channel.ChannelOption;
 import io.netty.channel.EventLoopGroup;
+import io.netty.channel.WriteBufferWaterMark;
 import io.netty.util.concurrent.DefaultThreadFactory;
 import xproxy.conf.XproxyConfig;
 import xproxy.conf.XproxyConfig.ConfigException;
@@ -27,8 +30,7 @@ public class Xproxy {
 	public static void main(String[] args) {
 		Xproxy xproxy = new Xproxy();
 		try {
-			xproxy.initializeAndRun(new String[] { "/Users/wuwo/github/Xproxy/src/main/resources/xproxy.yml" });
-			// xproxy.initializeAndRun(args);
+			xproxy.initializeAndRun(args);
 		} catch (ConfigException e) {
 			logger.error("Invalid config, exiting abnormally", e);
 			System.err.println("Invalid config, exiting abnormally");
@@ -52,12 +54,26 @@ public class Xproxy {
 
 		EventLoopGroup bossGroup = Independent.newEventLoopGroup(1, new DefaultThreadFactory("Xproxy-Boss-Thread"));
 		EventLoopGroup workerGroup = Independent.newEventLoopGroup(config.workerThreads(),
-				new DefaultThreadFactory("Xproxy-Worker-Thread"));
+				new DefaultThreadFactory("Xproxy-Downstream-Worker-Thread"));
 
 		try {
 			ServerBootstrap b = new ServerBootstrap();
 			b.group(bossGroup, workerGroup);
 			b.channel(Independent.serverChannelClass());
+
+			// connections wait for accept(influenced by maxconn)
+			b.option(ChannelOption.SO_BACKLOG, 1024);
+			b.option(ChannelOption.SO_REUSEADDR, true);
+			b.childOption(ChannelOption.SO_KEEPALIVE, true);
+			b.childOption(ChannelOption.TCP_NODELAY, true);
+			b.childOption(ChannelOption.SO_SNDBUF, 32 * 1024);
+			b.childOption(ChannelOption.SO_RCVBUF, 32 * 1024);
+			// temporary settings, need more tests
+			b.childOption(ChannelOption.WRITE_BUFFER_WATER_MARK, new WriteBufferWaterMark(8 * 1024, 32 * 1024));
+			b.childOption(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT);
+			// default is true, reduce thread context switching
+			b.childOption(ChannelOption.SINGLE_EVENTEXECUTOR_PER_GROUP, true);
+
 			b.childHandler(new XproxyDownStreamChannelInitializer(config, downStreamHandler));
 
 			Channel ch = b.bind(config.listen()).syncUninterruptibly().channel();
