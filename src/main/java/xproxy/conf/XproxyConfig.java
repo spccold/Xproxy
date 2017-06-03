@@ -24,10 +24,10 @@ public class XproxyConfig {
 	private static final Logger logger = LoggerFactory.getLogger(XproxyConfig.class);
 
 	private static final String UPSTREAM_POOL_PREFIX = "http://";
-	
+
 	private static final String AUTO = "auto";
-	
-	public static final int HTTP_PORT = 80;
+
+	private static final int DEFAULT_HTTP_PORT = 80;
 
 	private final AntPathMatcher pathMatcher = new AntPathMatcher();
 
@@ -44,15 +44,11 @@ public class XproxyConfig {
 	@JsonProperty("worker_connections")
 	private int workerConnections;
 
-	/** {server_name : [locations...]} */
 	@JsonProperty("servers")
 	private Map<String, List<Location>> servers;
 
 	@JsonProperty("upstreams")
 	private Map<String, Upstream> upstreams;
-
-	/** {server_name : {path : proxy_pass}} */
-	// private Map<String, Map<String, String>> ss;
 
 	private Map<String, List<Server>> us = new HashMap<>();
 
@@ -76,29 +72,29 @@ public class XproxyConfig {
 		}
 	}
 
-	public void parseConfig(XproxyConfig xproxyConfig) throws ConfigException{
+	public void parseConfig(XproxyConfig xproxyConfig) throws ConfigException {
 		listen = xproxyConfig.listen;
 		keepaliveTimeout = xproxyConfig.keepaliveTimeout;
+		workerConnections = xproxyConfig.workerConnections;
 		workerThreads = xproxyConfig.workerThreads;
-		if(AUTO.equalsIgnoreCase(workerThreads)){
+
+		if (AUTO.equalsIgnoreCase(workerThreads)) {
 			workers = Runtime.getRuntime().availableProcessors();
-		}else{
-			try{
+		} else {
+			try {
 				workers = Integer.parseInt(workerThreads);
-			}catch(NumberFormatException e){
+			} catch (NumberFormatException e) {
 				throw new ConfigException("worker_threads invalid", e);
 			}
 		}
-		
-		workerConnections = xproxyConfig.workerConnections;
-		upstreams = new HashMap<>();
 
+		upstreams = new HashMap<>();
 		for (Entry<String, Upstream> entry : xproxyConfig.upstreams.entrySet()) {
 			upstreams.put(UPSTREAM_POOL_PREFIX + entry.getKey(), entry.getValue());
 		}
 
 		servers = new HashMap<>();
-		if (HTTP_PORT != this.listen) {
+		if (DEFAULT_HTTP_PORT != listen) {
 			for (Entry<String, List<Location>> entry : xproxyConfig.servers.entrySet()) {
 				servers.put(entry.getKey() + ":" + listen, entry.getValue());
 			}
@@ -106,33 +102,18 @@ public class XproxyConfig {
 			servers = xproxyConfig.servers;
 		}
 
-		// Map<String, String> locationMap;
-		// List<Location> locations;
-		// for (Entry<String, List<Location>> serverEntry : servers.entrySet())
-		// {
-		// locations = serverEntry.getValue();
-		// if (CollectionUtils.isEmpty(locations)) {
-		// continue;
-		// }
-		// locationMap = new HashMap<>(1 << 3);
-		// for (Location location : locations) {
-		// locationMap.put(location.path(), location.proxypass());
-		// }
-		// ss.put(serverEntry.getKey(), locationMap);
-		// }
-		//
 		List<String> hosts;
-		List<Server> hs;
+		List<Server> servers;
 		for (Entry<String, Upstream> upstreamEntry : upstreams.entrySet()) {
 			hosts = upstreamEntry.getValue().servers();
 			if (CollectionUtils.isEmpty(hosts)) {
 				continue;
 			}
-			hs = new ArrayList<>(1 << 2);
+			servers = new ArrayList<>(1 << 2);
 			for (String host : hosts) {
-				hs.add(new Server(host, upstreamEntry.getValue().keepAlive()));
+				servers.add(new Server(host, upstreamEntry.getValue().keepAlive()));
 			}
-			us.put(upstreamEntry.getKey(), hs);
+			us.put(upstreamEntry.getKey(), servers);
 		}
 	}
 
@@ -156,13 +137,13 @@ public class XproxyConfig {
 		return us;
 	}
 
-	public String proxyPass(String serverName, String path) {
+	public String proxyPass(String serverName, String uri) {
 		List<Location> locations = servers.get(serverName);
 		if (CollectionUtils.isEmpty(locations)) {
 			return null;
 		}
 		for (Location location : locations) {
-			if (pathMatcher.match(location.path(), path)) {
+			if (pathMatcher.match(location.path(), uri)) {
 				return location.proxypass();
 			}
 		}
@@ -197,7 +178,7 @@ public class XproxyConfig {
 		}
 	}
 
-	public static class Upstream {
+	static class Upstream {
 		// the maximum number of idle keepalive connections to upstream servers
 		// that are preserved in the cache of each worker process
 		@JsonProperty("keepalive")
@@ -220,6 +201,7 @@ public class XproxyConfig {
 		private int keepalive;
 
 		private String ip;
+
 		private int port;
 
 		public Server(String host, int keepalive) {
@@ -251,6 +233,7 @@ public class XproxyConfig {
 			final int prime = 31;
 			int result = 1;
 			result = prime * result + ((ip == null) ? 0 : ip.hashCode());
+			result = prime * result + keepalive;
 			result = prime * result + port;
 			return result;
 		}
@@ -268,6 +251,8 @@ public class XproxyConfig {
 				if (other.ip != null)
 					return false;
 			} else if (!ip.equals(other.ip))
+				return false;
+			if (keepalive != other.keepalive)
 				return false;
 			if (port != other.port)
 				return false;
